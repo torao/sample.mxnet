@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: ml.dmlc.mxnet:mxnet-full_2.11-linux-x86_64-cpu:0.9.3a:jar">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.ivy2/cache/ml.dmlc.mxnet/mxnet-full_2.11-linux-x86_64-cpu/jars/mxnet-full_2.11-linux-x86_64-cpu-0.9.3a.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.ivy2/cache/ml.dmlc.mxnet/mxnet-full_2.11-linux-x86_64-cpu/srcs/mxnet-full_2.11-linux-x86_64-cpu-0.9.3a-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
