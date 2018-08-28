@@ -20,31 +20,32 @@ package ml.dmlc.mxnetexamples.rnn
 
 import ml.dmlc.mxnet.{DataBatch, DataIter, NDArray, Shape}
 import org.slf4j.LoggerFactory
+
 import scala.collection.immutable.ListMap
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import scala.util.Random
-import scala.collection.mutable
 
 /**
- * @author Depeng Liang
- */
+  * @author Depeng Liang
+  */
 object BucketIo {
 
   type Text2Id = (String, Map[String, Int]) => Array[Int]
   type ReadContent = String => String
 
-  def defaultReadContent(path: String): String = {
+  def defaultReadContent(path:String):String = {
     Source.fromFile(path).mkString.replaceAll("\\. |\n", " <eos> ")
   }
 
-  def defaultBuildVocab(path: String): Map[String, Int] = {
+  def defaultBuildVocab(path:String):Map[String, Int] = {
     val content = defaultReadContent(path).split(" ")
     var idx = 1 // 0 is left for zero - padding
     val vocab = mutable.Map.empty[String, Int]
     vocab.put(" ", 0) // put a dummy element here so that len (vocab) is correct
     content.foreach(word =>
-      if (word.length > 0 && !vocab.contains(word)) {
+      if(word.length > 0 && !vocab.contains(word)) {
         vocab.put(word, idx)
         idx += 1
       }
@@ -52,25 +53,25 @@ object BucketIo {
     vocab.toMap
   }
 
-  def defaultText2Id(sentence: String, theVocab: Map[String, Int]): Array[Int] = {
+  def defaultText2Id(sentence:String, theVocab:Map[String, Int]):Array[Int] = {
     val words = {
       val tmp = sentence.split(" ").filter(_.length() > 0)
-      for (w <- tmp) yield theVocab(w)
+      for(w <- tmp) yield theVocab(w)
     }
     words.toArray
   }
 
-  def defaultGenBuckets(sentences: Array[String], batchSize: Int,
-                        theVocab: Map[String, Int]): IndexedSeq[Int] = {
+  def defaultGenBuckets(sentences:Array[String], batchSize:Int,
+                        theVocab:Map[String, Int]):IndexedSeq[Int] = {
     val lenDict = scala.collection.mutable.Map[Int, Int]()
     var maxLen = -1
-    for (sentence <- sentences) {
+    for(sentence <- sentences) {
       val wordsLen = defaultText2Id(sentence, theVocab).length
-      if (wordsLen > 0) {
-        if (wordsLen > maxLen) {
+      if(wordsLen > 0) {
+        if(wordsLen > maxLen) {
           maxLen = wordsLen
         }
-        if (lenDict.contains(wordsLen)) {
+        if(lenDict.contains(wordsLen)) {
           lenDict(wordsLen) = lenDict(wordsLen) + 1
         } else {
           lenDict += wordsLen -> 1
@@ -82,49 +83,53 @@ object BucketIo {
     val buckets = ArrayBuffer[Int]()
     lenDict.foreach {
       case (l, n) =>
-        if (n + tl >= batchSize) {
+        if(n + tl >= batchSize) {
           buckets.append(l)
           tl = 0
         } else tl += n
     }
-    if (tl  > 0) buckets.append(maxLen)
+    if(tl > 0) buckets.append(maxLen)
     buckets
   }
 
   class BucketSentenceIter(
-      path: String, vocab: Map[String, Int], var buckets: IndexedSeq[Int],
-      _batchSize: Int, private val initStates: IndexedSeq[(String, (Int, Int))],
-      seperateChar: String = " <eos> ", text2Id: Text2Id = defaultText2Id,
-      readContent: ReadContent = defaultReadContent) extends DataIter {
+                            path:String, vocab:Map[String, Int], var buckets:IndexedSeq[Int],
+                            _batchSize:Int, private val initStates:IndexedSeq[(String, (Int, Int))],
+                            seperateChar:String = " <eos> ", text2Id:Text2Id = defaultText2Id,
+                            readContent:ReadContent = defaultReadContent) extends DataIter {
 
     private val logger = LoggerFactory.getLogger(classOf[BucketSentenceIter])
 
     private val content = readContent(path)
     private val sentences = content.split(seperateChar)
 
-    if (buckets.length == 0) {
+    if(buckets.length == 0) {
       buckets = defaultGenBuckets(sentences, batchSize, vocab)
     }
     buckets = buckets.sorted
     // pre-allocate with the largest bucket for better memory sharing
     private val _defaultBucketKey = (buckets(0) /: buckets.drop(1)) { (max, elem) =>
-      if (max < elem) elem else max
+      if(max < elem) elem else max
     }
-    override def defaultBucketKey: AnyRef = _defaultBucketKey.asInstanceOf[AnyRef]
+
+    override def defaultBucketKey:AnyRef = _defaultBucketKey.asInstanceOf[AnyRef]
+
     // we just ignore the sentence it is longer than the maximum
     // bucket size here
     private val data = buckets.indices.map(x => Array[Array[Float]]()).toArray
-    for (sentence <- sentences) {
+    for(sentence <- sentences) {
       val ids = text2Id(sentence, vocab)
-      if (ids.length > 0) {
+      if(ids.length > 0) {
         import scala.util.control.Breaks._
-        breakable { buckets.indices.foreach { idx =>
-          if (buckets(idx) >= ids.length) {
-            data(idx) = data(idx) :+
-            (ids.map(_.toFloat) ++ Array.fill[Float](buckets(idx) - ids.length)(0f))
-            break()
+        breakable {
+          buckets.indices.foreach { idx =>
+            if(buckets(idx) >= ids.length) {
+              data(idx) = data(idx) :+
+                (ids.map(_.toFloat) ++ Array.fill[Float](buckets(idx) - ids.length)(0f))
+              break()
+            }
           }
-        }}
+        }
       }
     }
 
@@ -136,10 +141,10 @@ object BucketIo {
       case (bkt, size) => logger.info(s"bucket of len $bkt : $size samples")
     }
 
-     // make a random data iteration plan
-     // truncate each bucket into multiple of batch-size
+    // make a random data iteration plan
+    // truncate each bucket into multiple of batch-size
     private var bucketNBatches = Array[Int]()
-    for (i <- data.indices) {
+    for(i <- data.indices) {
       bucketNBatches = bucketNBatches :+ (data(i).length / _batchSize)
       data(i) = data(i).take(bucketNBatches(i) * _batchSize)
     }
@@ -155,22 +160,23 @@ object BucketIo {
 
     private val dataBuffer = ArrayBuffer[NDArray]()
     private val labelBuffer = ArrayBuffer[NDArray]()
-    for (iBucket <- data.indices) {
+    for(iBucket <- data.indices) {
       dataBuffer.append(NDArray.zeros(_batchSize, buckets(iBucket)))
       labelBuffer.append(NDArray.zeros(_batchSize, buckets(iBucket)))
     }
 
     private val initStateArrays = initStates.map(x => NDArray.zeros(x._2._1, x._2._2))
 
-    private val _provideData = { val tmp = ListMap("data" -> Shape(_batchSize, _defaultBucketKey))
+    private val _provideData = {
+      val tmp = ListMap("data" -> Shape(_batchSize, _defaultBucketKey))
       tmp ++ initStates.map(x => x._1 -> Shape(x._2._1, x._2._2))
     }
     private val _provideLabel = ListMap("softmax_label" -> Shape(_batchSize, _defaultBucketKey))
 
     private var iBucket = 0
 
-    override def next(): DataBatch = {
-      if (!hasNext) throw new NoSuchElementException
+    override def next():DataBatch = {
+      if(!hasNext) throw new NoSuchElementException
       val bucketIdx = bucketPlan(iBucket)
       val dataBuf = dataBuffer(bucketIdx)
       val iIdx = bucketCurrIdx(bucketIdx)
@@ -178,7 +184,7 @@ object BucketIo {
       bucketCurrIdx(bucketIdx) = bucketCurrIdx(bucketIdx) + _batchSize
 
       val datas = idx.map(i => data(bucketIdx)(i))
-      for (sentence <- datas) {
+      for(sentence <- datas) {
         require(sentence.length == buckets(bucketIdx))
       }
       dataBuf.set(datas.flatten)
@@ -188,61 +194,67 @@ object BucketIo {
       labelBuf.set(labels.flatten)
 
       iBucket += 1
-      val batchProvideData = { val tmp = ListMap("data" -> dataBuf.shape)
+      val batchProvideData = {
+        val tmp = ListMap("data" -> dataBuf.shape)
         tmp ++ initStates.map(x => x._1 -> Shape(x._2._1, x._2._2))
       }
       val batchProvideLabel = ListMap("softmax_label" -> labelBuf.shape)
       new DataBatch(IndexedSeq(dataBuf) ++ initStateArrays,
-                    IndexedSeq(labelBuf),
-                    getIndex(),
-                    getPad(),
-                    this.buckets(bucketIdx).asInstanceOf[AnyRef],
-                    batchProvideData, batchProvideLabel)
+        IndexedSeq(labelBuf),
+        getIndex(),
+        getPad(),
+        this.buckets(bucketIdx).asInstanceOf[AnyRef],
+        batchProvideData, batchProvideLabel)
     }
 
     /**
-     * reset the iterator
-     */
-    override def reset(): Unit = {
+      * reset the iterator
+      */
+    override def reset():Unit = {
       iBucket = 0
       bucketCurrIdx.indices.foreach(i => bucketCurrIdx(i) = 0)
     }
 
-    override def batchSize: Int = _batchSize
+    override def batchSize:Int = _batchSize
 
     /**
-     * get data of current batch
-     * @return the data of current batch
-     */
-    override def getData(): IndexedSeq[NDArray] = IndexedSeq(dataBuffer(bucketPlan(iBucket)))
+      * get data of current batch
+      *
+      * @return the data of current batch
+      */
+    override def getData():IndexedSeq[NDArray] = IndexedSeq(dataBuffer(bucketPlan(iBucket)))
 
     /**
-     * Get label of current batch
-     * @return the label of current batch
-     */
-    override def getLabel(): IndexedSeq[NDArray] = IndexedSeq(labelBuffer(bucketPlan(iBucket)))
+      * Get label of current batch
+      *
+      * @return the label of current batch
+      */
+    override def getLabel():IndexedSeq[NDArray] = IndexedSeq(labelBuffer(bucketPlan(iBucket)))
 
     /**
-     * the index of current batch
-     * @return
-     */
-    override def getIndex(): IndexedSeq[Long] = IndexedSeq[Long]()
+      * the index of current batch
+      *
+      * @return
+      */
+    override def getIndex():IndexedSeq[Long] = IndexedSeq[Long]()
 
     // The name and shape of label provided by this iterator
-    override def provideLabel: ListMap[String, Shape] = this._provideLabel
+    override def provideLabel:ListMap[String, Shape] = this._provideLabel
 
     /**
-     * get the number of padding examples
-     * in current batch
-     * @return number of padding examples in current batch
-     */
-    override def getPad(): Int = 0
+      * get the number of padding examples
+      * in current batch
+      *
+      * @return number of padding examples in current batch
+      */
+    override def getPad():Int = 0
 
     // The name and shape of data provided by this iterator
-    override def provideData: ListMap[String, Shape] = this._provideData
+    override def provideData:ListMap[String, Shape] = this._provideData
 
-    override def hasNext: Boolean = {
+    override def hasNext:Boolean = {
       iBucket < bucketPlan.length
     }
   }
+
 }

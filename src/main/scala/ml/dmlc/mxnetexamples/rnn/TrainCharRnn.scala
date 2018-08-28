@@ -18,23 +18,25 @@
 package ml.dmlc.mxnetexamples.rnn
 
 import ml.dmlc.mxnet._
+import ml.dmlc.mxnet.optimizer.Adam
 import org.kohsuke.args4j.{CmdLineParser, Option}
 import org.slf4j.LoggerFactory
+
 import scala.collection.JavaConverters._
-import ml.dmlc.mxnet.optimizer.Adam
 
 /**
- * Follows the demo, to train the char rnn:
- * https://github.com/dmlc/mxnet/blob/master/example/rnn/char-rnn.ipynb
- * @author Depeng Liang
- */
+  * Follows the demo, to train the char rnn:
+  * https://github.com/dmlc/mxnet/blob/master/example/rnn/char-rnn.ipynb
+  *
+  * @author Depeng Liang
+  */
 object TrainCharRnn {
 
   private val logger = LoggerFactory.getLogger(classOf[TrainCharRnn])
 
-  def main(args: Array[String]): Unit = {
+  def main(args:Array[String]):Unit = {
     val incr = new TrainCharRnn
-    val parser: CmdLineParser = new CmdLineParser(incr)
+    val parser:CmdLineParser = new CmdLineParser(incr)
     try {
       parser.parseArgument(args.toList.asJava)
       assert(incr.dataPath != null && incr.saveModelPath != null)
@@ -44,7 +46,7 @@ object TrainCharRnn {
       // We can support various length input
       // For this problem, we cut each input sentence to length of 129
       // So we only need fix length bucket
-      val buckets = Array(129)
+      val buckets = new Array[Int](129)
       // hidden unit in LSTM cell
       val numHidden = 512
       // embedding dimension, which is, map a char to a 256 dim vector
@@ -59,26 +61,26 @@ object TrainCharRnn {
       // we will use pure sgd without momentum
       val momentum = 0.0f
 
-      val ctx = if (incr.gpu == -1) Context.cpu() else Context.gpu(incr.gpu)
+      val ctx = if(incr.gpu == -1) Context.cpu() else Context.gpu(incr.gpu)
       val vocab = Utils.buildVocab(incr.dataPath)
 
       // generate symbol for a length
-      def symGen(seqLen: Int): Symbol = {
+      def symGen(seqLen:Int):Symbol = {
         Lstm.lstmUnroll(numLstmLayer, seqLen, vocab.size + 1,
-                    numHidden = numHidden, numEmbed = numEmbed,
-                    numLabel = vocab.size + 1, dropout = 0.2f)
+          numHidden = numHidden, numEmbed = numEmbed,
+          numLabel = vocab.size + 1, dropout = 0.2f)
       }
 
       // initalize states for LSTM
-      val initC = for (l <- 0 until numLstmLayer)
+      val initC = for(l <- 0 until numLstmLayer)
         yield (s"l${l}_init_c_beta", (batchSize, numHidden))
-      val initH = for (l <- 0 until numLstmLayer)
+      val initH = for(l <- 0 until numLstmLayer)
         yield (s"l${l}_init_h_beta", (batchSize, numHidden))
       val initStates = initC ++ initH
 
       val dataTrain = new BucketIo.BucketSentenceIter(incr.dataPath, vocab, buckets,
-                                          batchSize, initStates, seperateChar = "\n",
-                                          text2Id = Utils.text2Id, readContent = Utils.readContent)
+        batchSize, initStates, seperateChar = "\n",
+        text2Id = Utils.text2Id, readContent = Utils.readContent)
 
       // the network symbol
       val symbol = symGen(buckets(0))
@@ -95,10 +97,10 @@ object TrainCharRnn {
 
       val gradDict = argNames.zip(argShapes).filter { case (name, shape) =>
         !datasAndLabels.contains(name)
-      }.map(x => x._1 -> NDArray.empty(x._2, ctx) ).toMap
+      }.map(x => x._1 -> NDArray.empty(x._2, ctx)).toMap
 
       argDict.foreach { case (name, ndArray) =>
-        if (!datasAndLabels.contains(name)) {
+        if(!datasAndLabels.contains(name)) {
           initializer.initWeight(name, ndArray)
         }
       }
@@ -118,7 +120,7 @@ object TrainCharRnn {
       val batchEndCallback = new Callback.Speedometer(batchSize, 50)
       val epochEndCallback = Utils.doCheckpoint(s"${incr.saveModelPath}/obama")
 
-      for (epoch <- 0 until numEpoch) {
+      for(epoch <- 0 until numEpoch) {
         // Training phase
         val tic = System.currentTimeMillis
         evalMetric.reset()
@@ -126,9 +128,9 @@ object TrainCharRnn {
         var epochDone = false
         // Iterate over training data.
         dataTrain.reset()
-        while (!epochDone) {
+        while(!epochDone) {
           var doReset = true
-          while (doReset && dataTrain.hasNext) {
+          while(doReset && dataTrain.hasNext) {
             val dataBatch = dataTrain.next()
 
             data.set(dataBatch.data(0))
@@ -145,7 +147,7 @@ object TrainCharRnn {
             nBatch += 1
             batchEndCallback.invoke(epoch, nBatch, evalMetric)
           }
-          if (doReset) {
+          if(doReset) {
             dataTrain.reset()
           }
           // this epoch is done
@@ -160,7 +162,7 @@ object TrainCharRnn {
       }
       executor.dispose()
     } catch {
-      case ex: Exception => {
+      case ex:Exception => {
         logger.error(ex.getMessage, ex)
         parser.printUsage(System.err)
         sys.exit(1)
@@ -177,9 +179,9 @@ class TrainCharRnn {
    * unzip -o char_lstm.zip
    */
   @Option(name = "--data-path", usage = "the input train data file")
-  private val dataPath: String = "./data/obama.txt"
+  private val dataPath:String = "./data/obama.txt"
   @Option(name = "--save-model-path", usage = "the model saving path")
-  private val saveModelPath: String = "./model/"
+  private val saveModelPath:String = "./model/"
   @Option(name = "--gpu", usage = "which gpu card to use, default is -1, means using cpu")
-  private val gpu: Int = -1
+  private val gpu:Int = -1
 }
